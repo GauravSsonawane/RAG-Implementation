@@ -26,6 +26,21 @@ const FileExplorer = ({ refreshTrigger }) => {
         }
     };
 
+    const handleDelete = async (filename) => {
+        if (!window.confirm(`Are you sure you want to delete ${filename}?`)) return;
+
+        try {
+            const response = await fetch(`http://localhost:8002/upload/${filename}`, {
+                method: 'DELETE'
+            });
+            if (response.ok) {
+                fetchFiles();
+            }
+        } catch (error) {
+            console.error('Failed to delete file:', error);
+        }
+    };
+
     const systemFiles = files.filter(f => f.category === 'system');
     const sessionFiles = files.filter(f => f.category === 'session');
 
@@ -60,7 +75,15 @@ const FileExplorer = ({ refreshTrigger }) => {
                         <FileText size={14} className="text-text-secondary shrink-0" />
                         <span className="text-xs text-text-secondary group-hover:text-text-primary truncate flex-1" title={f.name}>{f.name}</span>
                         {f.status === 'processing' && <span className="text-[10px] animate-pulse">⟳</span>}
-                        {f.status === 'failed' && <span className="text-[10px] text-red-500">❌</span>}
+                        {f.status === 'processed' && <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>}
+                        {f.status === 'error' && <span className="text-[10px] text-red-500">❌</span>}
+                        <button
+                            onClick={() => handleDelete(f.name)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 rounded-md transition-all text-text-tertiary hover:text-red-500"
+                            title="Delete File"
+                        >
+                            <Trash2 size={12} />
+                        </button>
                     </div>
                 ))}
             </div>

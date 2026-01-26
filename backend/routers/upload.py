@@ -1,8 +1,9 @@
-from fastapi import APIRouter, UploadFile, File, Depends
+from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from storage.database import get_db
 from storage.models import DocumentMetadata
+from knowledge_base.ingest import process_document
 import os
 import shutil
 
@@ -13,7 +14,7 @@ class UploadResponse(BaseModel):
     message: str = "File uploaded successfully"
 
 @router.post("/", response_model=UploadResponse)
-async def upload_file(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     upload_dir = "knowledge_base/documents"
     os.makedirs(upload_dir, exist_ok=True)
     
@@ -31,9 +32,9 @@ async def upload_file(file: UploadFile = File(...), db: AsyncSession = Depends(g
     await db.commit()
     await db.refresh(new_doc)
     
-    # For now, we return success and processing status. 
-    # In a production app, we'd trigger a background task (e.g. Celery) 
-    # for ingestion/embedding. 
+    # Queue background ingestion
+    background_tasks.add_task(process_document, file.filename, file_path)
+    
     return UploadResponse(document_id=new_doc.id, message=f"File {file.filename} uploaded and queued for processing.")
 
 @router.get("/list")
@@ -62,4 +63,30 @@ async def get_files(db: AsyncSession = Depends(get_db)):
         })
         
     return files
+
+@router.delete("/{filename}")
+async def delete_file(filename: str, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import select, delete
+    
+    # 1. Find the file in DB
+    stmt = select(DocumentMetadata).where(DocumentMetadata.filename == filename)
+    result = await db.execute(stmt)
+    doc = result.scalar_one_or_none()
+    
+    if not doc:
+        return {"message": "File not found in database", "status": "error"}
+        
+    # 2. Try to remove the physical file
+    try:
+        if os.path.exists(doc.file_path):
+            os.remove(doc.file_path)
+    except Exception as e:
+        print(f"Error removing physical file: {e}")
+        # Continue to remove from DB even if file is already gone
+        
+    # 3. Remove from DB
+    await db.execute(delete(DocumentMetadata).where(DocumentMetadata.id == doc.id))
+    await db.commit()
+    
+    return {"message": f"File {filename} deleted successfully", "status": "success"}
 

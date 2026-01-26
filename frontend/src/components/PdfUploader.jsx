@@ -69,12 +69,12 @@ const PdfUploader = () => {
                 >
                     {status === 'idle' && (
                         <>
-                            <span>Start Ingestion</span>
+                            <span>Upload & Index</span>
                             <span className="text-[10px] opacity-60">→</span>
                         </>
                     )}
-                    {status === 'uploading' && 'Processing...'}
-                    {status === 'success' && 'Indexed Successfully'}
+                    {status === 'uploading' && 'Uploading...'}
+                    {status === 'success' && 'Upload Complete'}
                     {status === 'error' && 'Failed'}
                 </button>
             )}

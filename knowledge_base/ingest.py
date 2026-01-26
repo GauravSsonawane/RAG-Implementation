@@ -29,67 +29,70 @@ embeddings = OllamaEmbeddings(
     base_url="http://localhost:11434"
 )
 
+async def process_document(pdf_file: str, file_path: str):
+    """Processes a single PDF document: splits text, embeds, and saves to PGVector."""
+    async with AsyncSessionLocal() as session:
+        # Check if already processed
+        stmt = select(DocumentMetadata).where(DocumentMetadata.filename == pdf_file)
+        result = await session.execute(stmt)
+        meta = result.scalar_one_or_none()
+        
+        if meta and meta.status == "processed":
+            print(f"Skipping {pdf_file}, already processed.")
+            return
+
+        if not meta:
+            meta = DocumentMetadata(
+                filename=pdf_file,
+                file_path=file_path,
+                status="processing"
+            )
+            session.add(meta)
+            await session.commit()
+        
+        print(f"Processing {pdf_file}...")
+        
+        try:
+            loader = PyPDFLoader(file_path)
+            docs = loader.load()
+            
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            splits = text_splitter.split_documents(docs)
+            print(f"Created {len(splits)} splits for {pdf_file}")
+            
+            vector_store = PGVector(
+                embeddings=embeddings,
+                collection_name=COLLECTION_NAME,
+                connection=CONNECTION_STRING,
+                use_jsonb=True,
+            )
+            
+            # Add to vector store
+            vector_store.add_documents(splits)
+            
+            # Update status
+            meta.status = "processed"
+            await session.merge(meta)
+            await session.commit()
+            print(f"Successfully processed {pdf_file}")
+            
+        except Exception as e:
+            print(f"Error processing {pdf_file}: {e}")
+            meta.status = "error"
+            await session.merge(meta)
+            await session.commit()
+
 async def ingest_pdfs():
     doc_dir = "knowledge_base/documents"
     if not os.path.exists(doc_dir):
         print(f"Directory {doc_dir} not found.")
         return
 
-    vector_store = PGVector(
-        embeddings=embeddings,
-        collection_name=COLLECTION_NAME,
-        connection=CONNECTION_STRING,
-        use_jsonb=True,
-    )
-
     pdf_files = [f for f in os.listdir(doc_dir) if f.endswith(".pdf")]
     
     for pdf_file in pdf_files:
         file_path = os.path.join(doc_dir, pdf_file)
-        
-        async with AsyncSessionLocal() as session:
-            # Check if already processed
-            stmt = select(DocumentMetadata).where(DocumentMetadata.filename == pdf_file)
-            result = await session.execute(stmt)
-            meta = result.scalar_one_or_none()
-            
-            if meta and meta.status == "processed":
-                print(f"Skipping {pdf_file}, already processed.")
-                continue
-            
-            if not meta:
-                meta = DocumentMetadata(
-                    filename=pdf_file,
-                    file_path=file_path,
-                    status="processing"
-                )
-                session.add(meta)
-                await session.commit()
-            
-            print(f"Processing {pdf_file}...")
-            
-            try:
-                loader = PyPDFLoader(file_path)
-                docs = loader.load()
-                
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-                splits = text_splitter.split_documents(docs)
-                print(f"Created {len(splits)} splits for {pdf_file}")
-                
-                # Add to vector store (using synchronous method for reliability)
-                vector_store.add_documents(splits)
-                
-                # Update status
-                meta.status = "processed"
-                await session.merge(meta) # Use merge to ensure it updates the session's object
-                await session.commit()
-                print(f"Successfully processed {pdf_file}")
-
-                
-            except Exception as e:
-                print(f"Error processing {pdf_file}: {e}")
-                meta.status = "error"
-                await session.commit()
+        await process_document(pdf_file, file_path)
 
 if __name__ == "__main__":
     asyncio.run(ingest_pdfs())
