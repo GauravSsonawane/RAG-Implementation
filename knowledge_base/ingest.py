@@ -44,15 +44,52 @@ def get_loader(file_path: str):
     elif ext in [".docx", ".doc"]:
         return Docx2txtLoader(file_path)
     elif ext in [".csv", ".xlsx", ".xls"]:
-        # Use pandas for tabular data to be more robust
         import pandas as pd
         class PandasLoader:
             def __init__(self, path):
                 self.path = path
             def load(self):
-                df = pd.read_csv(self.path) if self.path.endswith(".csv") else pd.read_excel(self.path)
-                content = df.to_string(index=False)
-                return [Document(page_content=content, metadata={"source": os.path.basename(self.path)})]
+                try:
+                    if self.path.endswith(".csv"):
+                        df = pd.read_csv(self.path)
+                    else:
+                        # Explicitly use openpyxl for xlsx to avoid dependency issues
+                        engine = 'openpyxl' if self.path.endswith(".xlsx") else None
+                        df = pd.read_excel(self.path, engine=engine)
+                    
+                    df = df.fillna("") # Handle missing values gracefully
+                    
+                    documents = []
+                    current_chunk = []
+                    current_length = 0
+                    
+                    for _, row in df.iterrows():
+                        # Format row as column-value pairs for better semantic meaning
+                        row_text = " | ".join([f"{col}: {val}" for col, val in row.items()])
+                        
+                        # Add to current chunk if it fits, else start a new one
+                        if current_length + len(row_text) > 800 and current_chunk:
+                            documents.append(Document(
+                                page_content="\n".join(current_chunk),
+                                metadata={"source": os.path.basename(self.path)}
+                            ))
+                            current_chunk = [row_text]
+                            current_length = len(row_text)
+                        else:
+                            current_chunk.append(row_text)
+                            current_length += len(row_text)
+                    
+                    if current_chunk:
+                        documents.append(Document(
+                            page_content="\n".join(current_chunk),
+                            metadata={"source": os.path.basename(self.path)}
+                        ))
+                        
+                    print(f"Tabular loader created {len(documents)} document objects for {self.path}")
+                    return documents
+                except Exception as e:
+                    print(f"Error in PandasLoader for {self.path}: {e}")
+                    raise e
         return PandasLoader(file_path)
     elif ext in [".txt", ".md"]:
         class RobustTextLoader:
@@ -103,7 +140,7 @@ async def process_document(pdf_file: str, file_path: str):
             print(f"Loaded {len(docs)} document objects.")
             
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-            splits = text_splitter.split_documents(docs)
+            splits = await asyncio.to_thread(text_splitter.split_documents, docs)
             
             # Ensure consistent metadata for deletion and search
             for split in splits:
@@ -113,17 +150,24 @@ async def process_document(pdf_file: str, file_path: str):
                 
             print(f"Created {len(splits)} splits for {pdf_file}")
             
-            print(f"Connecting to vector store for {pdf_file}...")
-            vector_store = PGVector(
-                embeddings=embeddings,
-                collection_name=COLLECTION_NAME,
-                connection=CONNECTION_STRING,
-                use_jsonb=True,
-            )
-            
-            # Add to vector store
-            print(f"Adding documents to vector store for {pdf_file}...")
-            vector_store.add_documents(splits)
+            def add_to_vectorstore():
+                print(f"Connecting to vector store for {pdf_file}...")
+                vector_store = PGVector(
+                    embeddings=embeddings,
+                    collection_name=COLLECTION_NAME,
+                    connection=CONNECTION_STRING,
+                    use_jsonb=True,
+                )
+                
+                # Add to vector store in batches to avoid overwhelming the system
+                batch_size = 50
+                for i in range(0, len(splits), batch_size):
+                    batch = splits[i:i+batch_size]
+                    print(f"Adding batch {i//batch_size + 1}/{(len(splits)-1)//batch_size + 1} ({len(batch)} splits) for {pdf_file}...")
+                    vector_store.add_documents(batch)
+                
+            print(f"Starting vector store ingestion for {pdf_file}...")
+            await asyncio.to_thread(add_to_vectorstore)
             print(f"Successfully added {pdf_file} to vector store.")
             
             # Update status
