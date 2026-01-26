@@ -60,6 +60,7 @@ async def process_document(pdf_file: str, file_path: str):
             splits = text_splitter.split_documents(docs)
             print(f"Created {len(splits)} splits for {pdf_file}")
             
+            print(f"Connecting to vector store for {pdf_file}...")
             vector_store = PGVector(
                 embeddings=embeddings,
                 collection_name=COLLECTION_NAME,
@@ -68,16 +69,20 @@ async def process_document(pdf_file: str, file_path: str):
             )
             
             # Add to vector store
+            print(f"Adding documents to vector store for {pdf_file}...")
             vector_store.add_documents(splits)
+            print(f"Successfully added {pdf_file} to vector store.")
             
             # Update status
             meta.status = "processed"
             await session.merge(meta)
             await session.commit()
-            print(f"Successfully processed {pdf_file}")
+            print(f"Successfully updated status for {pdf_file}")
             
         except Exception as e:
-            print(f"Error processing {pdf_file}: {e}")
+            print(f"!!! Error processing {pdf_file}: {e}")
+            import traceback
+            traceback.print_exc()
             meta.status = "error"
             await session.merge(meta)
             await session.commit()

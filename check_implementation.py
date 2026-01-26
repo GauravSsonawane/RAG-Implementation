@@ -21,7 +21,7 @@ def check_file_contains(filepath, search_string, description):
         return False
 
 def main():
-    print("\n🔍 Verifying Implementation...\n")
+    print("\nVerifying Implementation...\n")
     
     checks = [
         (
@@ -56,7 +56,7 @@ def main():
         ),
         (
             r"c:\RAG Implementation\frontend\verify.js",
-            "fetch('http://localhost:8001/verify')",
+            "fetch('http://localhost:8002/verify')",
             "Frontend - verify.js script"
         ),
         (

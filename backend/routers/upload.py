@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks
 from pydantic import BaseModel
+from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from storage.database import get_db
 from storage.models import DocumentMetadata
@@ -13,6 +14,12 @@ class UploadResponse(BaseModel):
     document_id: str
     message: str = "File uploaded successfully"
 
+class FileInfo(BaseModel):
+    name: str
+    status: str
+    id: str
+    category: str
+
 @router.post("/", response_model=UploadResponse)
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     upload_dir = "knowledge_base/documents"
@@ -22,22 +29,35 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
-    # Create metadata entry
-    new_doc = DocumentMetadata(
-        filename=file.filename,
-        file_path=file_path,
-        status="processing"
-    )
-    db.add(new_doc)
+    # Check if duplicate exists
+    from sqlalchemy import select
+    stmt = select(DocumentMetadata).where(DocumentMetadata.filename == file.filename)
+    result = await db.execute(stmt)
+    existing_doc = result.scalar_one_or_none()
+    
+    if existing_doc:
+        existing_doc.status = "processing"
+        existing_doc.file_path = file_path
+        doc_id = existing_doc.id
+    else:
+        # Create metadata entry
+        new_doc = DocumentMetadata(
+            filename=file.filename,
+            file_path=file_path,
+            status="processing"
+        )
+        db.add(new_doc)
+        await db.flush() # Get ID
+        doc_id = new_doc.id
+    
     await db.commit()
-    await db.refresh(new_doc)
     
     # Queue background ingestion
     background_tasks.add_task(process_document, file.filename, file_path)
     
-    return UploadResponse(document_id=new_doc.id, message=f"File {file.filename} uploaded and queued for processing.")
+    return UploadResponse(document_id=doc_id, message=f"File {file.filename} uploaded and queued for processing.")
 
-@router.get("/list")
+@router.get("/list", response_model=List[FileInfo])
 async def get_files(db: AsyncSession = Depends(get_db)):
     """Get all files with category split"""
     from sqlalchemy import select
@@ -62,7 +82,7 @@ async def get_files(db: AsyncSession = Depends(get_db)):
             "category": category
         })
         
-    return files
+    return [FileInfo(**f) for f in files]
 
 @router.delete("/{filename}")
 async def delete_file(filename: str, db: AsyncSession = Depends(get_db)):
