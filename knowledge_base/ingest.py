@@ -24,16 +24,20 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "rag_user")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "rag_pass")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "rag_db")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5433")
 
-# Point to the host port we mapped
-CONNECTION_STRING = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@localhost:5433/{POSTGRES_DB}"
-COLLECTION_NAME = "industrial_docs"
+# Check for a full CONNECTION_STRING (postgresql+psycopg://...)
+# If not provided, build it from parts.
+CONNECTION_STRING = os.getenv("VECTOR_DB_URL")
+if not CONNECTION_STRING:
+    CONNECTION_STRING = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "industrial_docs")
 
 embeddings = OllamaEmbeddings(
-    model="nomic-embed-text:latest", 
-    base_url="http://localhost:11434"
+    model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text:latest"), 
+    base_url=OLLAMA_URL
 )
 
 def get_loader(file_path: str):

@@ -37,7 +37,7 @@ if not CONNECTION_STRING:
 COLLECTION_NAME = "industrial_docs"
 
 embeddings = OllamaEmbeddings(
-    model="nomic-embed-text:latest",
+    model=os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text:latest"),
     base_url=OLLAMA_URL
 )
 
