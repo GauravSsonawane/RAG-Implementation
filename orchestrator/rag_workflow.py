@@ -70,11 +70,12 @@ async def retrieve(state: AgentState):
         use_jsonb=True,
     )
     
-    docs = vector_store.similarity_search(query, k=5)
+    docs = vector_store.similarity_search(query, k=10)
     # Store both content and source metadata
     context = [doc.page_content for doc in docs]
     sources = [doc.metadata.get("source", "Unknown") for doc in docs]
     
+    print(f"Retrieved {len(docs)} documents from: {set(sources)}")
     return {"context": context, "sources": sources}
 
 # Node 3: Answer Generator

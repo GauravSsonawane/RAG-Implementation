@@ -15,4 +15,7 @@ langchain-community
 langchain-postgres
 langchain-ollama
 greenlet
+docx2txt
+openpyxl
+pandas
 

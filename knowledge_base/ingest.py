@@ -1,7 +1,14 @@
 import os
 import asyncio
 from typing import List
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import (
+    PyPDFLoader, 
+    Docx2txtLoader, 
+    TextLoader, 
+    CSVLoader,
+    UnstructuredExcelLoader
+)
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_postgres.vectorstores import PGVector
 from langchain_ollama import OllamaEmbeddings
@@ -29,8 +36,44 @@ embeddings = OllamaEmbeddings(
     base_url="http://localhost:11434"
 )
 
+def get_loader(file_path: str):
+    ext = os.path.splitext(file_path)[1].lower()
+    print(f"Selecting loader for extension: {ext} ({file_path})")
+    if ext == ".pdf":
+        return PyPDFLoader(file_path)
+    elif ext in [".docx", ".doc"]:
+        return Docx2txtLoader(file_path)
+    elif ext in [".csv", ".xlsx", ".xls"]:
+        # Use pandas for tabular data to be more robust
+        import pandas as pd
+        class PandasLoader:
+            def __init__(self, path):
+                self.path = path
+            def load(self):
+                df = pd.read_csv(self.path) if self.path.endswith(".csv") else pd.read_excel(self.path)
+                content = df.to_string(index=False)
+                return [Document(page_content=content, metadata={"source": os.path.basename(self.path)})]
+        return PandasLoader(file_path)
+    elif ext in [".txt", ".md"]:
+        class RobustTextLoader:
+            def __init__(self, path):
+                self.path = path
+            def load(self):
+                encodings = ["utf-8", "utf-8-sig", "latin-1", "cp1252"]
+                for enc in encodings:
+                    try:
+                        loader = TextLoader(self.path, encoding=enc)
+                        return loader.load()
+                    except UnicodeDecodeError:
+                        continue
+                raise ValueError(f"Could not decode {self.path} with common encodings.")
+        return RobustTextLoader(file_path)
+    else:
+        raise ValueError(f"Unsupported file extension: {ext}")
+
 async def process_document(pdf_file: str, file_path: str):
-    """Processes a single PDF document: splits text, embeds, and saves to PGVector."""
+    """Processes a single document: splits text, embeds, and saves to PGVector."""
+    print(f"Starting process_document for: {pdf_file}")
     async with AsyncSessionLocal() as session:
         # Check if already processed
         stmt = select(DocumentMetadata).where(DocumentMetadata.filename == pdf_file)
@@ -42,6 +85,7 @@ async def process_document(pdf_file: str, file_path: str):
             return
 
         if not meta:
+            print(f"Creating new metadata for {pdf_file}")
             meta = DocumentMetadata(
                 filename=pdf_file,
                 file_path=file_path,
@@ -53,15 +97,19 @@ async def process_document(pdf_file: str, file_path: str):
         print(f"Processing {pdf_file}...")
         
         try:
-            loader = PyPDFLoader(file_path)
-            docs = loader.load()
+            loader = get_loader(file_path)
+            print(f"Loading document with {loader.__class__.__name__}...")
+            docs = await asyncio.to_thread(loader.load)
+            print(f"Loaded {len(docs)} document objects.")
             
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             splits = text_splitter.split_documents(docs)
             
-            # Ensure consistent metadata for deletion
+            # Ensure consistent metadata for deletion and search
             for split in splits:
                 split.metadata["source"] = pdf_file
+                # Prepend source filename to content to aid retrieval
+                split.page_content = f"--- Document: {pdf_file} ---\n{split.page_content}"
                 
             print(f"Created {len(splits)} splits for {pdf_file}")
             
@@ -98,7 +146,8 @@ async def ingest_pdfs():
         print(f"Directory {doc_dir} not found.")
         return
 
-    pdf_files = [f for f in os.listdir(doc_dir) if f.endswith(".pdf")]
+    SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv", ".xlsx", ".xls"}
+    pdf_files = [f for f in os.listdir(doc_dir) if os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS]
     
     for pdf_file in pdf_files:
         file_path = os.path.join(doc_dir, pdf_file)
