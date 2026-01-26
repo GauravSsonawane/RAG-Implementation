@@ -58,6 +58,11 @@ async def process_document(pdf_file: str, file_path: str):
             
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             splits = text_splitter.split_documents(docs)
+            
+            # Ensure consistent metadata for deletion
+            for split in splits:
+                split.metadata["source"] = pdf_file
+                
             print(f"Created {len(splits)} splits for {pdf_file}")
             
             print(f"Connecting to vector store for {pdf_file}...")

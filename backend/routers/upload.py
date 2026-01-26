@@ -4,7 +4,8 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from storage.database import get_db
 from storage.models import DocumentMetadata
-from knowledge_base.ingest import process_document
+from knowledge_base.ingest import process_document, embeddings, CONNECTION_STRING, COLLECTION_NAME
+from langchain_postgres.vectorstores import PGVector
 import os
 import shutil
 
@@ -104,7 +105,35 @@ async def delete_file(filename: str, db: AsyncSession = Depends(get_db)):
         print(f"Error removing physical file: {e}")
         # Continue to remove from DB even if file is already gone
         
-    # 3. Remove from DB
+    # 3. Clean up associated vectors in PGVector
+    try:
+        vector_store = PGVector(
+            embeddings=embeddings,
+            collection_name=COLLECTION_NAME,
+            connection=CONNECTION_STRING,
+            use_jsonb=True,
+        )
+        # Delete by metadata filter
+        # Note: Depending on langchain_postgres version, we might need to find IDs first
+        # but most support a simple filter or direct SQL. 
+        # Here we use the standard collection deletion if possible.
+        # For safety and completeness in this env, we'll try to find and then delete.
+        from sqlalchemy import text
+        async with db.begin_finish_savepoint() if False else db: # We are in a session already
+            # We can use the connection from the session to run a manual delete if needed
+            # but PGVector should support a way to filter. 
+            # Given the constraints, a direct SQL delete on the embedding table filtered by source metadata is most robust.
+            delete_stmt = text(f"""
+                DELETE FROM langchain_pg_embedding 
+                WHERE collection_id = (SELECT uuid FROM langchain_pg_collection WHERE name = :coll LIMIT 1)
+                AND cmetadata->>'source' = :filename
+            """)
+            await db.execute(delete_stmt, {"coll": COLLECTION_NAME, "filename": filename})
+            print(f"Successfully deleted vectors for {filename}")
+    except Exception as e:
+        print(f"Error deleting vectors from PGVector: {e}")
+
+    # 4. Remove from Metadata DB
     await db.execute(delete(DocumentMetadata).where(DocumentMetadata.id == doc.id))
     await db.commit()
     
