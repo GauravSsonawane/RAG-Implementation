@@ -64,3 +64,11 @@ async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)
         await db.rollback() # Rollback on error
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/{session_id}/history", response_model=List[ChatMessage])
+async def get_chat_history(session_id: str, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import select
+    stmt = select(MessageModel).where(MessageModel.session_id == session_id).order_by(MessageModel.created_at.asc())
+    result = await db.execute(stmt)
+    messages = result.scalars().all()
+    return [ChatMessage(role=m.role, content=m.content) for m in messages]
+

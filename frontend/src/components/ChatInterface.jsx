@@ -7,6 +7,22 @@ const ChatInterface = ({ sessionId }) => {
     const scrollRef = useRef(null);
 
     useEffect(() => {
+        if (sessionId) {
+            fetchHistory();
+        }
+    }, [sessionId]);
+
+    const fetchHistory = async () => {
+        try {
+            const response = await fetch(`http://localhost:8002/chat/${sessionId}/history`);
+            const data = await response.json();
+            setMessages(data || []);
+        } catch (error) {
+            console.error('Failed to fetch history:', error);
+        }
+    };
+
+    useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
