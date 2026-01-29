@@ -1,0 +1,35 @@
+# Core Dependencies - Let pip manage versions for compatibility
+streamlit
+langchain
+langchain-community
+langchain-core
+langchain-huggingface
+langchain-chroma
+langchain-ollama
+langchain-text-splitters
+
+# Vector Store
+chromadb
+
+# Embeddings
+sentence-transformers
+transformers
+
+# Document Processing - Native Python libraries
+pypdf
+openpyxl
+python-docx
+python-pptx
+
+# Image Processing
+Pillow
+
+# File Monitoring
+watchdog
+
+# Utilities
+requests
+
+# Note: We're using native Python libraries (openpyxl, python-docx, python-pptx)
+# instead of 'unstructured' which causes DLL errors on Windows.
+# The application includes built-in loaders for Excel, Word, and PowerPoint files.

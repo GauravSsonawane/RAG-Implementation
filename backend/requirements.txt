@@ -21,4 +21,9 @@ pandas
 python-dotenv
 psycopg
 psycopg-binary
+easyocr
+Pillow
+pytesseract
+python-docx
+python-pptx
 

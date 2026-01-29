@@ -1,4 +1,5 @@
 import os
+import asyncio
 from typing import Annotated, List, TypedDict
 from langgraph.graph import StateGraph, START, END
 from langchain_ollama import ChatOllama
@@ -16,7 +17,7 @@ load_dotenv()
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
     query: str
-    rewritten_query: str
+    rewritten_queries: List[str]
     context: List[str]
     sources: List[str]
     answer: str
@@ -45,23 +46,38 @@ llm = get_llm()
 
 # Node 1: Query Rewriter
 async def rewrite_query(state: AgentState):
-    print("---REWRITING QUERY---")
+    print("---DECOMPOSING QUERY INTO MULTIPLE SEARCHES---")
     query = state["query"]
+    messages = state.get("messages", [])
     
-    # Simple rewrite prompt
     prompt = ChatPromptTemplate.from_template(
-        "Rewrite the following user query to be more descriptive and suitable for a vector search. "
-        "User query: {query}"
+        "You are an expert search query generator. Decompose the user query into 1-3 **standalone** search queries. "
+        "Each sub-query must focus on only **ONE** specific topic or document type mentioned. "
+        "Do NOT combine topics in a single sub-query (e.g., do not combine 'equipment status' with 'billing policy'). "
+        "Keep them simple and keyword-rich for a vector search. "
+        "\n\nContext History (if any): {history}\n\nUser Query: {query}"
+        "\n\nOutput ONLY a list of queries, one per line. No numbers, no extra text."
     )
-    chain = prompt | llm
-    response = await chain.ainvoke({"query": query})
     
-    return {"rewritten_query": response.content}
+    history_text = "\n".join([f"{m.type}: {m.content}" for m in messages[-3:]]) if messages else "No history"
+    chain = prompt | llm
+    response = await chain.ainvoke({"history": history_text, "query": query})
+    
+    # Simple splitting by newline or comma
+    raw_queries = response.content.split("\n")
+    queries = [q.strip().strip(",").strip('"') for q in raw_queries if q.strip()]
+    
+    # Fallback to original query if something goes wrong
+    if not queries:
+        queries = [query]
+    
+    print(f"Generated {len(queries)} sub-queries: {queries}")
+    return {"rewritten_queries": queries}
 
 # Node 2: Retriever
 async def retrieve(state: AgentState):
-    print("---RETRIEVING DOCUMENTS---")
-    query = state["query"]
+    print("---RETRIEVING DOCUMENTS (MULTI-QUERY DUAL RETRIEVAL)---")
+    queries = state.get("rewritten_queries", [state["query"]])
     
     vector_store = PGVector(
         embeddings=embeddings,
@@ -70,12 +86,52 @@ async def retrieve(state: AgentState):
         use_jsonb=True,
     )
     
-    docs = vector_store.similarity_search(query, k=10)
-    # Store both content and source metadata
-    context = [doc.page_content for doc in docs]
-    sources = [doc.metadata.get("source", "Unknown") for doc in docs]
+    SYSTEM_DOCS = [
+        "01_Customer_FAQ_Guide.pdf",
+        "02_New_Meter_Application_Process.pdf",
+        "03_Billing_Dispute_Resolution_Procedure.pdf",
+        "04_Emergency_Response_Protocol.pdf",
+        "05_Payment_Plans_Financial_Assistance.pdf"
+    ]
     
-    print(f"Retrieved {len(docs)} documents from: {set(sources)}")
+    all_query_results = []
+    
+    # Run searches for each sub-query
+    for q in queries:
+        print(f"Searching for sub-query: {q}")
+        # Search KB - Use k=5 per query for better coverage
+        system_filter = {"source": {"$in": SYSTEM_DOCS}}
+        docs_system = await asyncio.to_thread(vector_store.similarity_search, q, k=5, filter=system_filter)
+        
+        # Search Session - Use k=5 per query
+        session_filter = {"source": {"$nin": SYSTEM_DOCS}}
+        docs_session = await asyncio.to_thread(vector_store.similarity_search, q, k=5, filter=session_filter)
+        
+        all_query_results.append(docs_system + docs_session)
+    
+    # FAIR MERGE: Interleave results from each query so all topics are represented early
+    merged_docs = []
+    max_results = max(len(res) for res in all_query_results) if all_query_results else 0
+    for i in range(max_results):
+        for query_res in all_query_results:
+            if i < len(query_res):
+                merged_docs.append(query_res[i])
+    
+    # Deduplicate by content to avoid redundancy
+    unique_docs = []
+    seen_content = set()
+    for doc in merged_docs:
+        if doc.page_content not in seen_content:
+            unique_docs.append(doc)
+            seen_content.add(doc.page_content)
+    
+    # FINAL CAP: Ensure we don't overwhelm the 3B model (limit to top 12 chunks total)
+    final_docs = unique_docs[:12]
+    
+    context = [doc.page_content for doc in final_docs]
+    sources = list(set([doc.metadata.get("source", "Unknown") for doc in final_docs]))
+    
+    print(f"Retrieved {len(final_docs)} unique chunks from {len(sources)} sources across {len(queries)} queries.")
     return {"context": context, "sources": sources}
 
 # Node 3: Answer Generator
@@ -83,24 +139,39 @@ async def generate_answer(state: AgentState):
     print("---GENERATING ANSWER---")
     query = state["query"]
     context = "\n\n".join(state["context"])
+    messages = state.get("messages", [])
     
-    prompt = ChatPromptTemplate.from_template(
-        "You are an industrial assistant. Use the following context to answer the user query accurately. "
-        "If the context doesn't contain the answer, say you don't know based on the provided documents. "
-        "\n\nContext: {context}\n\nUser Query: {query}"
-    )
-    chain = prompt | llm
-    response = await chain.ainvoke({"context": context, "query": query})
+    # History-aware prompt
+    if messages:
+        prompt = ChatPromptTemplate.from_template(
+            "You are an industrial assistant. Use the following context and chat history to answer the user query accurately. "
+            "Maintain conversational continuity while citing the provided documents. "
+            "If the context doesn't contain a direct answer, provide the most relevant guidance or contact info available. "
+            "\n\nChat History: {history}\n\nContext: {context}\n\nUser Query: {query}"
+        )
+        history_text = "\n".join([f"{m.type}: {m.content}" for m in messages[-10:]]) # Last 10 messages for context
+        chain = prompt | llm
+        response = await chain.ainvoke({"history": history_text, "context": context, "query": query})
+    else:
+        prompt = ChatPromptTemplate.from_template(
+            "You are an industrial assistant. Use the following context to answer the user query accurately. "
+            "If the context does not contain a direct answer, infer the most helpful information or provide the most relevant contact from the guides. "
+            "\n\nContext: {context}\n\nUser Query: {query}"
+        )
+        chain = prompt | llm
+        response = await chain.ainvoke({"context": context, "query": query})
     
     return {"answer": response.content}
 
 # Build Graph
 builder = StateGraph(AgentState)
 
+builder.add_node("rewrite_query", rewrite_query)
 builder.add_node("retrieve", retrieve)
 builder.add_node("generate_answer", generate_answer)
 
-builder.add_edge(START, "retrieve")
+builder.add_edge(START, "rewrite_query")
+builder.add_edge("rewrite_query", "retrieve")
 builder.add_edge("retrieve", "generate_answer")
 builder.add_edge("generate_answer", END)
 

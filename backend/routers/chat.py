@@ -36,20 +36,36 @@ async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)
         db.add(new_session)
         await db.flush() # Flush to ensure ID is available for FK without committing the whole transaction yet
     
-    # 2. Prepare history for LangGraph if needed (or just use the last message)
+    # 2. Fetch Chat History from DB for context
+    stmt = select(MessageModel).where(MessageModel.session_id == request.session_id).order_by(MessageModel.created_at.asc())
+    history_result = await db.execute(stmt)
+    history_messages = history_result.scalars().all()
+    
+    # Convert DB messages to LangChain format (limit to last 10 for context window)
+    langchain_history = []
+    for m in history_messages[-10:]:
+        if m.role == "user":
+            langchain_history.append(HumanMessage(content=m.content))
+        else:
+            langchain_history.append(AIMessage(content=m.content))
+    
+    # 3. Prepare latest query
     last_user_message = request.messages[-1].content
     
-    # 3. Run LangGraph workflow
+    # 4. Run LangGraph workflow with history
     try:
-        inputs = {"query": last_user_message, "messages": []}
+        inputs = {
+            "query": last_user_message, 
+            "messages": langchain_history
+        }
         config = {"configurable": {"thread_id": request.session_id}}
         
         result = await rag_workflow.ainvoke(inputs, config=config)
         
         answer = result.get("answer", "I'm sorry, I couldn't generate an answer.")
-        sources = result.get("sources", [])  # Get actual sources from workflow
+        sources = result.get("sources", [])
         
-        # 4. Store messages in DB
+        # 5. Store new messages in DB
         user_msg = MessageModel(session_id=request.session_id, role="user", content=last_user_message)
         ai_msg = MessageModel(session_id=request.session_id, role="assistant", content=answer)
         
