@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const PdfUploader = () => {
+const PdfUploader = ({ sessionId }) => {
     const [files, setFiles] = useState([]);
     const [status, setStatus] = useState('idle'); // idle, uploading, indexing, success, error, partial_error
 
@@ -54,6 +54,7 @@ const PdfUploader = () => {
         for (const file of files) {
             const formData = new FormData();
             formData.append('file', file);
+            if (sessionId) formData.append('session_id', sessionId);
 
             try {
                 const response = await fetch('http://localhost:8002/upload/', {
@@ -120,8 +121,8 @@ const PdfUploader = () => {
                     onClick={handleUpload}
                     disabled={status === 'uploading' || status === 'indexing'}
                     className={`w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all ${status === 'uploading' || status === 'indexing'
-                            ? 'bg-bg-surface text-text-tertiary cursor-wait'
-                            : 'bg-text-primary text-bg-main hover:bg-white shadow-md'
+                        ? 'bg-bg-surface text-text-tertiary cursor-wait'
+                        : 'bg-text-primary text-bg-main hover:bg-white shadow-md'
                         }`}
                 >
                     {status === 'idle' && (

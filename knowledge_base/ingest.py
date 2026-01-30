@@ -221,9 +221,9 @@ def get_loader(file_path: str):
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 
-async def process_document(pdf_file: str, file_path: str):
+async def process_document(pdf_file: str, file_path: str, session_id: str = None):
     """Processes a single document: splits text, embeds, and saves to PGVector."""
-    print(f"Starting process_document for: {pdf_file}")
+    print(f"Starting process_document for: {pdf_file} (Session: {session_id})")
     async with AsyncSessionLocal() as session:
         # Check if already processed
         stmt = select(DocumentMetadata).where(DocumentMetadata.filename == pdf_file)
@@ -231,6 +231,7 @@ async def process_document(pdf_file: str, file_path: str):
         meta = result.scalar_one_or_none()
         
         if meta and meta.status == "processed":
+            # If reprocessing with different session, might want to update, but skipping for now or just log
             print(f"Skipping {pdf_file}, already processed.")
             return
 
@@ -239,7 +240,8 @@ async def process_document(pdf_file: str, file_path: str):
             meta = DocumentMetadata(
                 filename=pdf_file,
                 file_path=file_path,
-                status="processing"
+                status="processing",
+                session_id=session_id
             )
             session.add(meta)
             await session.commit()
@@ -258,6 +260,8 @@ async def process_document(pdf_file: str, file_path: str):
             # Ensure consistent metadata for deletion and search
             for split in splits:
                 split.metadata["source"] = pdf_file
+                if session_id:
+                    split.metadata["session_id"] = session_id
                 # Prepend source filename to content to aid retrieval
                 split.page_content = f"--- Document: {pdf_file} ---\n{split.page_content}"
                 

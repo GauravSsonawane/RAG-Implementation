@@ -66,13 +66,35 @@ function App() {
             refreshTrigger={sessionRefresh}
           />
 
+          {currentSessionId && (
+            <div className="flex justify-end">
+              <button
+                onClick={async () => {
+                  if (!confirm("Clear all files and memory for this session?")) return;
+                  try {
+                    const res = await fetch(`http://localhost:8002/upload/session/${currentSessionId}/files`, { method: 'DELETE' });
+                    const data = await res.json();
+                    alert(data.message);
+                    setSessionRefresh(prev => prev + 1); // Refresh UI
+                  } catch (e) {
+                    console.error(e);
+                    alert("Failed to clear context");
+                  }
+                }}
+                className="text-[10px] text-red-400 hover:text-red-300 transition-colors uppercase tracking-widest font-semibold flex items-center gap-1"
+              >
+                <span className="text-xs">🗑️</span> Clear Context
+              </button>
+            </div>
+          )}
+
           <div className="border-t border-border-subtle pt-2">
             <FileExplorer />
           </div>
         </div>
 
         <div className="p-4 border-t border-border-subtle bg-bg-sidebar">
-          <PdfUploader />
+          <PdfUploader sessionId={currentSessionId} />
         </div>
       </aside>
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Depends, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, Depends, BackgroundTasks
 from pydantic import BaseModel
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,7 @@ class FileInfo(BaseModel):
     category: str
 
 @router.post("/", response_model=UploadResponse)
-async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), session_id: str = Form(None), db: AsyncSession = Depends(get_db)):
     upload_dir = "knowledge_base/documents"
     os.makedirs(upload_dir, exist_ok=True)
     
@@ -30,22 +30,25 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
-    # Check if duplicate exists
+    # Check if duplicate exists (for this session if provided, or global)
     from sqlalchemy import select
     stmt = select(DocumentMetadata).where(DocumentMetadata.filename == file.filename)
+    # Note: We technically allow same filename in different sessions now, but keeping simple for now
     result = await db.execute(stmt)
     existing_doc = result.scalar_one_or_none()
     
     if existing_doc:
         existing_doc.status = "processing"
         existing_doc.file_path = file_path
+        existing_doc.session_id = session_id # Update session ID
         doc_id = existing_doc.id
     else:
         # Create metadata entry
         new_doc = DocumentMetadata(
             filename=file.filename,
             file_path=file_path,
-            status="processing"
+            status="processing",
+            session_id=session_id
         )
         db.add(new_doc)
         await db.flush() # Get ID
@@ -54,7 +57,7 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     await db.commit()
     
     # Queue background ingestion
-    background_tasks.add_task(process_document, file.filename, file_path)
+    background_tasks.add_task(process_document, file.filename, file_path, session_id)
     
     return UploadResponse(document_id=doc_id, message=f"File {file.filename} uploaded and queued for processing.")
 
@@ -129,4 +132,48 @@ async def delete_file(filename: str, db: AsyncSession = Depends(get_db)):
     print(f"Committed deletion for {filename}")
     
     return {"message": f"File {filename} deleted successfully", "status": "success"}
+
+@router.delete("/session/{session_id}/files")
+async def delete_session_files(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete all files and vectors associated with a session."""
+    from sqlalchemy import select, delete
+    
+    # 1. Find all files for this session
+    stmt = select(DocumentMetadata).where(DocumentMetadata.session_id == session_id)
+    result = await db.execute(stmt)
+    docs = result.scalars().all()
+    
+    if not docs:
+        return {"message": "No files found for this session", "count": 0}
+        
+    deleted_count = 0
+    for doc in docs:
+        # 2. Try to remove physical file
+        try:
+            if os.path.exists(doc.file_path):
+                os.remove(doc.file_path)
+        except Exception as e:
+            print(f"Error removing physical file {doc.filename}: {e}")
+            
+        # 3. Clean up associated vectors in PGVector
+        try:
+            from sqlalchemy import text
+            # Delete vectors where session_id matches
+            # Note: ingested metadata stores session_id
+            delete_stmt = text(f"""
+                DELETE FROM langchain_pg_embedding 
+                WHERE collection_id = (SELECT uuid FROM langchain_pg_collection WHERE name = :coll LIMIT 1)
+                AND cmetadata->>'session_id' = :session_id
+            """)
+            await db.execute(delete_stmt, {"coll": COLLECTION_NAME, "session_id": session_id})
+        except Exception as e:
+            print(f"Error deleting vectors: {e}")
+            
+        deleted_count += 1
+        
+    # 4. Remove from Metadata DB (Bulk delete)
+    await db.execute(delete(DocumentMetadata).where(DocumentMetadata.session_id == session_id))
+    await db.commit()
+    
+    return {"message": f"Deleted {deleted_count} files for session {session_id}", "count": deleted_count}
 

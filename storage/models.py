@@ -34,3 +34,4 @@ class DocumentMetadata(Base):
     upload_date = Column(DateTime, default=datetime.utcnow)
     status = Column(String)  # 'processed', 'processing', 'error'
     metadata_json = Column(JSON, nullable=True)
+    session_id = Column(String, nullable=True)
