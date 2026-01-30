@@ -21,6 +21,8 @@ class AgentState(TypedDict):
     context: List[str]
     sources: List[str]
     answer: str
+    model_name: str
+    model_name: str
 
 # Config
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -42,7 +44,8 @@ embeddings = OllamaEmbeddings(
     base_url=OLLAMA_URL
 )
 
-llm = get_llm()
+# # llm = get_llm() # Moved to inside nodes for dynamic model selection
+ # Moved to inside nodes for dynamic model selection
 
 # Node 1: Query Rewriter
 async def rewrite_query(state: AgentState):
@@ -60,7 +63,12 @@ async def rewrite_query(state: AgentState):
     )
     
     history_text = "\n".join([f"{m.type}: {m.content}" for m in messages[-3:]]) if messages else "No history"
-    chain = prompt | llm
+    
+    # Dynamic LLM
+    model_name = state.get("model_name")
+    local_llm = get_llm(model_name)
+    
+    chain = prompt | local_llm
     response = await chain.ainvoke({"history": history_text, "query": query})
     
     # Simple splitting by newline or comma
@@ -154,7 +162,12 @@ async def generate_answer(state: AgentState):
             "\n\nChat History: {history}\n\nContext: {context}\n\nUser Query: {query}"
         )
         history_text = "\n".join([f"{m.type}: {m.content}" for m in messages[-10:]]) # Last 10 messages for context
-        chain = prompt | llm
+        
+        # Dynamic LLM
+        model_name = state.get("model_name")
+        local_llm = get_llm(model_name)
+        
+        chain = prompt | local_llm
         response = await chain.ainvoke({"history": history_text, "context": context, "query": query})
     else:
         prompt = ChatPromptTemplate.from_template(
@@ -166,7 +179,11 @@ async def generate_answer(state: AgentState):
             "3. Do NOT refuse to answer by saying 'I cannot access files'. You DO have access via the Context.\n"
             "\n\nContext: {context}\n\nUser Query: {query}"
         )
-        chain = prompt | llm
+        # Dynamic LLM
+        model_name = state.get("model_name")
+        local_llm = get_llm(model_name)
+        
+        chain = prompt | local_llm
         response = await chain.ainvoke({"context": context, "query": query})
     
     return {"answer": response.content}

@@ -16,6 +16,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str
     messages: List[ChatMessage]
+    model: Optional[str] = "gpt-oss:120b-cloud"  # Default if not provided
 
 class ChatResponse(BaseModel):
     answer: str
@@ -23,7 +24,7 @@ class ChatResponse(BaseModel):
 
 @router.post("/", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)):
-    print(f"DEBUG: Received chat request for session {request.session_id}")
+    print(f"DEBUG: Received chat request for session {request.session_id} using model {request.model}")
     # 1. Ensure Session exists (Lazy initialization)
     from sqlalchemy import select
     from storage.models import Session as SessionModel
@@ -61,7 +62,8 @@ async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)
     try:
         inputs = {
             "query": last_user_message, 
-            "messages": langchain_history
+            "messages": langchain_history,
+            "model_name": request.model
         }
         config = {"configurable": {"thread_id": request.session_id}}
         

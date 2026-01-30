@@ -11,9 +11,10 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # For demonstration, we'll use a configurable model name.
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "gpt-oss:120b-cloud")
 
-def get_llm():
+def get_llm(model_name: str = None):
     return ChatOllama(
-        model=MODEL_NAME,
+        model=model_name or MODEL_NAME,
         base_url=OLLAMA_URL,
         temperature=0,
     )
+

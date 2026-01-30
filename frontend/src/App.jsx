@@ -7,6 +7,7 @@ import FileExplorer from './components/FileExplorer';
 function App() {
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [sessionRefresh, setSessionRefresh] = useState(0);
+  const [selectedModel, setSelectedModel] = useState("gpt-oss:120b-cloud");
 
   const handleNewSession = async () => {
     const newId = `session_${Math.random().toString(36).substr(2, 9)}`;
@@ -46,6 +47,18 @@ function App() {
           </button>
         </div>
 
+        {/* Model Selector */}
+        <div className="px-3 pb-2">
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg bg-bg-surface border border-border-subtle text-xs font-medium text-text-secondary focus:outline-none focus:border-accent appearance-none cursor-pointer"
+          >
+            <option value="gpt-oss:120b-cloud">GPT-OSS 120B (Cloud)</option>
+            <option value="llama3.2:3b">Llama 3.2 3B (Fast)</option>
+          </select>
+        </div>
+
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-4">
           <SessionSelector
             currentSessionId={currentSessionId}
@@ -72,7 +85,7 @@ function App() {
 
         <div className="flex-1 overflow-hidden relative flex flex-col items-center">
           {currentSessionId ? (
-            <ChatInterface sessionId={currentSessionId} />
+            <ChatInterface sessionId={currentSessionId} selectedModel={selectedModel} />
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-8 max-w-3xl mx-auto w-full animate-in fade-in duration-700">
               <div className="space-y-4">
@@ -98,7 +111,7 @@ function App() {
                     <span className="font-medium text-text-primary">System Online</span>
                   </div>
                   <span className="text-sm text-text-secondary leading-relaxed">
-                    LLM: <strong>Llama 3.2 (3B)</strong><br />
+                    LLM: <strong>{selectedModel}</strong><br />
                     Vector Store: <strong>Connected</strong>
                   </span>
                 </div>

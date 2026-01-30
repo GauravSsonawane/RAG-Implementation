@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const ChatInterface = ({ sessionId }) => {
+const ChatInterface = ({ sessionId, selectedModel }) => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -43,7 +43,8 @@ const ChatInterface = ({ sessionId }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     session_id: sessionId,
-                    messages: [...messages, userMessage]
+                    messages: [...messages, userMessage],
+                    model: selectedModel
                 })
             });
 
