@@ -23,13 +23,16 @@ class ChatResponse(BaseModel):
 
 @router.post("/", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)):
+    print(f"DEBUG: Received chat request for session {request.session_id}")
     # 1. Ensure Session exists (Lazy initialization)
     from sqlalchemy import select
     from storage.models import Session as SessionModel
     
     stmt = select(SessionModel).where(SessionModel.id == request.session_id)
+    print("DEBUG: Executing session check query")
     result = await db.execute(stmt)
     session_exists = result.scalar_one_or_none()
+    print(f"DEBUG: Session exists: {session_exists is not None}")
     
     if not session_exists:
         new_session = SessionModel(id=request.session_id)
@@ -38,7 +41,9 @@ async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)
     
     # 2. Fetch Chat History from DB for context
     stmt = select(MessageModel).where(MessageModel.session_id == request.session_id).order_by(MessageModel.created_at.asc())
+    print("DEBUG: Fetching chat history")
     history_result = await db.execute(stmt)
+    print("DEBUG: History fetched")
     history_messages = history_result.scalars().all()
     
     # Convert DB messages to LangChain format (limit to last 10 for context window)
@@ -60,7 +65,9 @@ async def chat_endpoint(request: ChatRequest, db: AsyncSession = Depends(get_db)
         }
         config = {"configurable": {"thread_id": request.session_id}}
         
+        print(f"Workflow Start Session: {request.session_id}")
         result = await rag_workflow.ainvoke(inputs, config=config)
+        print("Workflow End")
         
         answer = result.get("answer", "I'm sorry, I couldn't generate an answer.")
         sources = result.get("sources", [])

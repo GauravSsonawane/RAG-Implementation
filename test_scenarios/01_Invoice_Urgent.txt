@@ -1,0 +1,10 @@
+INVOICE #998877
+Date: October 25, 2024
+To: Industrial RAG Inc.
+
+Description: Emergency Generator Repair
+Amount: $15,000.00
+Terms: IMMEDIATE PAYMENT REQUIRED (Net-3).
+
+NOTE: This specific contract overrides the standard corporate Net-30 payment policy due to the emergency nature of the work.
+Payment must be received by October 28th, 2024.

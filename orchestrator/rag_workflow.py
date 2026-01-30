@@ -28,7 +28,7 @@ POSTGRES_USER = os.getenv("POSTGRES_USER", "rag_user")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "rag_pass")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "rag_db")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5433")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5434")
 
 # Prioritize DATABASE_URL if in Docker
 CONNECTION_STRING = os.getenv("DATABASE_URL")
@@ -144,9 +144,13 @@ async def generate_answer(state: AgentState):
     # History-aware prompt
     if messages:
         prompt = ChatPromptTemplate.from_template(
-            "You are an industrial assistant. Use the following context and chat history to answer the user query accurately. "
-            "Maintain conversational continuity while citing the provided documents. "
-            "If the context doesn't contain a direct answer, provide the most relevant guidance or contact info available. "
+            "You are an intelligent industrial assistant. You have been provided with RELEVANT CONTEXT from the company's knowledge base and user-uploaded files. "
+            "The Context below contains the actual CONTENT of the files the user is asking about. "
+            "INSTRUCTIONS:\n"
+            "1. Answer strictly based on the provided Context.\n"
+            "2. If the user asks about a specific file (e.g. 'development_tools.xlsx'), assume the relevant text is in the Context.\n"
+            "3. Do NOT refuse to answer by saying 'I cannot access files'. You DO have access via the Context.\n"
+            "4. Maintain conversational continuity.\n"
             "\n\nChat History: {history}\n\nContext: {context}\n\nUser Query: {query}"
         )
         history_text = "\n".join([f"{m.type}: {m.content}" for m in messages[-10:]]) # Last 10 messages for context
@@ -154,8 +158,12 @@ async def generate_answer(state: AgentState):
         response = await chain.ainvoke({"history": history_text, "context": context, "query": query})
     else:
         prompt = ChatPromptTemplate.from_template(
-            "You are an industrial assistant. Use the following context to answer the user query accurately. "
-            "If the context does not contain a direct answer, infer the most helpful information or provide the most relevant contact from the guides. "
+            "You are an intelligent industrial assistant. You have been provided with RELEVANT CONTEXT from the company's knowledge base and user-uploaded files. "
+            "The Context below contains the actual CONTENT of the files the user is asking about. "
+            "INSTRUCTIONS:\n"
+            "1. Answer strictly based on the provided Context.\n"
+            "2. If the user asks about a specific file (e.g. 'development_tools.xlsx'), assume the relevant text is in the Context.\n"
+            "3. Do NOT refuse to answer by saying 'I cannot access files'. You DO have access via the Context.\n"
             "\n\nContext: {context}\n\nUser Query: {query}"
         )
         chain = prompt | llm
@@ -176,3 +184,5 @@ builder.add_edge("retrieve", "generate_answer")
 builder.add_edge("generate_answer", END)
 
 rag_workflow = builder.compile()
+
+

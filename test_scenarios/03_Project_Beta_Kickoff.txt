@@ -1,0 +1,15 @@
+PROJECT BETA - KICKOFF MEETING MINUTES
+Date: Oct 30, 2024
+Confidentiality: Internal Only
+
+Project Lead: Sarah Connor
+Technical Architect: Kyle Reese
+Deadline: November 1st, 2024
+
+Scope:
+Development of the new internal dashboard "Skynet". 
+This is a standard software project and does not involve physical machinery or standard facility protocols.
+
+Next Steps:
+- Sarah to finalize UI mocks.
+- Kyle to set up the repo.
