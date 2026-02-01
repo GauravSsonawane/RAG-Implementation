@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const ChatInterface = ({ sessionId, selectedModel }) => {
     const [messages, setMessages] = useState([]);
@@ -96,9 +98,37 @@ const ChatInterface = ({ sessionId, selectedModel }) => {
                             <div className={`max-w-[85%] lg:max-w-[75%] ${msg.role === 'user' ? '' : 'space-y-2'}`}>
                                 <div className={`px-5 py-3.5 rounded-2xl text-sm leading-relaxed ${msg.role === 'user'
                                     ? 'bg-bg-surface-hover text-text-primary rounded-br-sm'
-                                    : 'text-text-primary'
+                                    : 'text-text-primary w-full'
                                     }`}>
-                                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                                    {msg.role === 'user' ? (
+                                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                                    ) : (
+                                        <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-bg-surface prose-pre:border prose-pre:border-border-subtle">
+                                            <ReactMarkdown
+                                                remarkPlugins={[remarkGfm]}
+                                                components={{
+                                                    table: ({ node, ...props }) => <div className="overflow-x-auto my-4 border border-border-subtle rounded-lg"><table className="w-full text-left text-xs" {...props} /></div>,
+                                                    thead: ({ node, ...props }) => <thead className="bg-bg-surface text-text-primary font-semibold border-b border-border-subtle" {...props} />,
+                                                    th: ({ node, ...props }) => <th className="px-4 py-3" {...props} />,
+                                                    td: ({ node, ...props }) => <td className="px-4 py-3 border-b border-border-subtle/50 last:border-0" {...props} />,
+                                                    a: ({ node, ...props }) => <a className="text-accent hover:underline" {...props} />,
+                                                    ul: ({ node, ...props }) => <ul className="list-disc pl-4 space-y-1 my-2" {...props} />,
+                                                    ol: ({ node, ...props }) => <ol className="list-decimal pl-4 space-y-1 my-2" {...props} />,
+                                                    li: ({ node, ...props }) => <li className="pl-1" {...props} />,
+                                                    h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-6 mb-4 text-text-primary" {...props} />,
+                                                    h2: ({ node, ...props }) => <h2 className="text-lg font-bold mt-5 mb-3 text-text-primary" {...props} />,
+                                                    h3: ({ node, ...props }) => <h3 className="text-base font-bold mt-4 mb-2 text-text-primary" {...props} />,
+                                                    code: ({ node, inline, className, children, ...props }) => {
+                                                        return inline ?
+                                                            <code className="bg-bg-surface px-1.5 py-0.5 rounded text-xs font-mono text-accent" {...props}>{children}</code> :
+                                                            <code className="block bg-bg-surface p-4 rounded-lg text-xs font-mono overflow-x-auto my-2 border border-border-subtle" {...props}>{children}</code>
+                                                    }
+                                                }}
+                                            >
+                                                {msg.content}
+                                            </ReactMarkdown>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Citations */}

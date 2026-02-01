@@ -68,17 +68,12 @@ async def get_files(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(DocumentMetadata))
     docs = result.scalars().all()
     
-    SYSTEM_DOCS = [
-        "01_Customer_FAQ_Guide.pdf",
-        "02_New_Meter_Application_Process.pdf",
-        "03_Billing_Dispute_Resolution_Procedure.pdf",
-        "04_Emergency_Response_Protocol.pdf",
-        "05_Payment_Plans_Financial_Assistance.pdf"
-    ]
-    
     files = []
     for doc in docs:
-        category = "system" if doc.filename in SYSTEM_DOCS else "session"
+        # If session_id is None/Empty, it's a System/Permanent file.
+        # Otherwise, it belongs to a specific session.
+        category = "session" if doc.session_id else "system"
+        
         files.append({
             "name": doc.filename,
             "status": doc.status,

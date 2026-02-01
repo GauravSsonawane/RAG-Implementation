@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Trash2, Database, Folder } from 'lucide-react';
+import { FileText, Trash2, Database, Folder, Upload } from 'lucide-react';
 
 const FileExplorer = ({ refreshTrigger }) => {
     const [files, setFiles] = useState([]);
@@ -49,16 +49,57 @@ const FileExplorer = ({ refreshTrigger }) => {
 
             {/* System Knowledge */}
             <div className="space-y-1">
-                <div className="flex items-center gap-2 mb-2 px-1">
-                    <Database size={12} className="text-accent" />
-                    <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">System Knowledge</span>
+                <div className="flex items-center justify-between gap-2 mb-2 px-1">
+                    <div className="flex items-center gap-2">
+                        <Database size={12} className="text-accent" />
+                        <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">System Knowledge</span>
+                    </div>
+                    <button
+                        onClick={() => document.getElementById('system-upload').click()}
+                        className="text-text-tertiary hover:text-accent transition-colors"
+                        title="Upload to Permanent Memory"
+                    >
+                        <Upload size={12} />
+                    </button>
+                    <input
+                        type="file"
+                        id="system-upload"
+                        className="hidden"
+                        multiple
+                        accept=".pdf,.docx,.txt,.xlsx,.xls,.md,.csv"
+                        onChange={async (e) => {
+                            const files = Array.from(e.target.files);
+                            if (!files.length) return;
+
+                            // Simple upload loop
+                            for (const file of files) {
+                                const formData = new FormData();
+                                formData.append('file', file);
+                                try {
+                                    await fetch('http://localhost:8002/upload/', { method: 'POST', body: formData });
+                                } catch (err) {
+                                    console.error(err);
+                                }
+                            }
+                            // Refresh
+                            fetchFiles();
+                        }}
+                    />
                 </div>
                 {systemFiles.length === 0 && !loading && <div className="text-xs text-text-tertiary px-2">No system docs linked</div>}
                 {systemFiles.map((f, i) => (
                     <div key={i} className="flex items-center gap-2 px-3 py-2 bg-bg-surface/30 border border-transparent hover:border-accent/20 rounded-lg group transition-all">
                         <FileText size={14} className="text-accent shrink-0" />
                         <span className="text-xs font-medium truncate flex-1" title={f.name}>{f.name}</span>
+                        {f.status === 'processing' && <span className="text-[10px] animate-pulse">⟳</span>}
                         <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></div>
+                        <button
+                            onClick={() => handleDelete(f.name)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 rounded-md transition-all text-text-tertiary hover:text-red-500"
+                            title="Delete Permanent File"
+                        >
+                            <Trash2 size={12} />
+                        </button>
                     </div>
                 ))}
             </div>

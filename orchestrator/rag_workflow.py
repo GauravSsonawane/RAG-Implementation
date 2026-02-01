@@ -156,9 +156,10 @@ async def generate_answer(state: AgentState):
             "The Context below contains the actual CONTENT of the files the user is asking about. "
             "INSTRUCTIONS:\n"
             "1. Answer strictly based on the provided Context.\n"
-            "2. If the user asks about a specific file (e.g. 'development_tools.xlsx'), assume the relevant text is in the Context.\n"
-            "3. Do NOT refuse to answer by saying 'I cannot access files'. You DO have access via the Context.\n"
-            "4. Maintain conversational continuity.\n"
+            "2. **Format your answer using clear Markdown**: Use **Bold** for key terms, `Code` for specific values, and **Lists** for steps.\n"
+            "3. Use **Tables** only when comparing complex data; otherwise prefer bullet points for readability.\n"
+            "4. If the user asks about a specific file, confirm you found it in the context.\n"
+            "5. Maintain conversational continuity.\n"
             "\n\nChat History: {history}\n\nContext: {context}\n\nUser Query: {query}"
         )
         history_text = "\n".join([f"{m.type}: {m.content}" for m in messages[-10:]]) # Last 10 messages for context
@@ -175,8 +176,9 @@ async def generate_answer(state: AgentState):
             "The Context below contains the actual CONTENT of the files the user is asking about. "
             "INSTRUCTIONS:\n"
             "1. Answer strictly based on the provided Context.\n"
-            "2. If the user asks about a specific file (e.g. 'development_tools.xlsx'), assume the relevant text is in the Context.\n"
-            "3. Do NOT refuse to answer by saying 'I cannot access files'. You DO have access via the Context.\n"
+            "2. **Format your answer using clear Markdown**: Use **Bold** for key terms, `Code` for specific values, and **Lists** for steps.\n"
+            "3. Use **Tables** only when comparing complex data; otherwise prefer bullet points for readability.\n"
+            "4. If the user asks about a specific file, confirm you found it in the context.\n"
             "\n\nContext: {context}\n\nUser Query: {query}"
         )
         # Dynamic LLM
